@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Meus Cursos - Amemiya Academy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="app-body">
+  <header class="topbar">
+    <div class="topbar-left">
+      <!-- Logo da Amemiya -->
+      <div class="logo-img-wrapper">
+        <img src="designer.png" width="50" height="50" alt="Amemiya" />
+      </div>
+      <span class="logo-title">Amemiya Academy</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-outline" onclick="logout()">
+        Sair
+      </button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="section">
+      <h1 class="page-title">Bem-vindo de volta! 👋</h1>
+      <p class="page-subtitle">
+        Explore os cursos disponíveis e acompanhe seu desenvolvimento.
+      </p>
+
+      <div class="cards-row">
+        <div class="card small">
+          <h3>Total de Cursos</h3>
+          <p id="totalCursos" class="card-number">0</p>
+        </div>
+        <div class="card small">
+          <h3>Não Iniciados</h3>
+          <p id="naoIniciados" class="card-number">0</p>
+        </div>
+        <div class="card small">
+          <h3>Em Andamento</h3>
+          <p id="emAndamento" class="card-number">0</p>
+        </div>
+        <div class="card small">
+          <h3>Concluídos</h3>
+          <p id="concluidos" class="card-number">0</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Meus Cursos</h2>
+        <input
+          type="text"
+          id="userSearch"
+          class="input-search"
+          placeholder="Buscar curso por nome ou categoria..."
+        />
+      </div>
+
+      <div id="coursesGrid" class="courses-grid">
+        <!-- preenchido via JS -->
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost/amemiya_academy/api";
+
+    const coursesGrid   = document.getElementById("coursesGrid");
+    const userSearch    = document.getElementById("userSearch");
+
+    const totalCursosEl  = document.getElementById("totalCursos");
+    const naoIniciadosEl = document.getElementById("naoIniciados");
+    const emAndamentoEl  = document.getElementById("emAndamento");
+    const concluidosEl   = document.getElementById("concluidos");
+
+    let allCourses = [];
+
+    // 🔹 dados do usuário logado (gravados no login.html)
+    const USER_ID  = localStorage.getItem("user_id")  || "8febf27a-d152-11f0-96a2-e8cf83f7db5d"; // id que aparece na tabela users
+    const REGISTRO = localStorage.getItem("registro") || "123456";        
+    const USER_ROLE = localStorage.getItem("role")      || "";
+    const USER_NAME = localStorage.getItem("user_name") || "";
+
+    function logout() {
+      // Se quiser, pode limpar o localStorage aqui:
+      // localStorage.removeItem("user_id");
+      // localStorage.removeItem("registro");
+      // localStorage.removeItem("role");
+      // localStorage.removeItem("user_name");
+      window.location.href = "login.html";
+    }
+
+    function formatStatus(status) {
+      switch (status) {
+        case "em_andamento": return "Em andamento";
+        case "concluido":    return "Concluído";
+        case "nao_iniciado":
+        default:             return "Não iniciado";
+      }
+    }
+
+    function atualizarContadores(cursos) {
+      const total = cursos.length;
+      const nao   = cursos.filter(c => (c.status || "nao_iniciado") === "nao_iniciado").length;
+      const em    = cursos.filter(c => c.status === "em_andamento").length;
+      const con   = cursos.filter(c => c.status === "concluido").length;
+
+      totalCursosEl.textContent  = total;
+      naoIniciadosEl.textContent = nao;
+      emAndamentoEl.textContent  = em;
+      concluidosEl.textContent   = con;
+    }
+
+    async function updateProgress(courseId, newStatus, newPercent) {
+      try {
+        const payload = {
+          user_id:   USER_ID   || null,
+          registro:  REGISTRO  || null,
+          course_id: courseId,
+          status:    newStatus,
+          progress_percent: newPercent
+        };
+
+        console.log("Enviando para update_progress.php:", payload);
+
+        const resp = await fetch(`${API_BASE}/update_progress.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const rawText = await resp.text();
+        console.log("Resposta bruta do PHP:", rawText);
+
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          console.error("Erro ao fazer JSON.parse na resposta:", e);
+          alert("Erro ao interpretar resposta do servidor. Veja o console.");
+          return;
+        }
+
+        if (!data.success) {
+          console.warn("Falha ao atualizar progresso:", data.message, data);
+          alert("Não foi possível atualizar o progresso: " + (data.message || "erro desconhecido"));
+          return;
+        }
+
+        console.log("Progresso atualizado com sucesso:", data);
+
+        await loadCourses(userSearch.value.trim());
+      } catch (err) {
+        console.error("Erro geral em updateProgress:", err);
+        alert("Erro ao comunicar com o servidor. Veja o console.");
+      }
+    }
+
+    function openCourse(accessUrl, courseId) {
+      if (!accessUrl) {
+        alert("Este curso ainda não possui link de acesso cadastrado.");
+        return;
+      }
+
+      // marca como em andamento ao abrir o curso
+      updateProgress(courseId, "em_andamento", null);
+      window.open(accessUrl, "_blank");
+    }
+
+    function markCompleted(courseId) {
+      if (!confirm("Marcar este curso como concluído?")) return;
+      updateProgress(courseId, "concluido", 100);
+    }
+
+    async function loadCourses(filter = "") {
+      coursesGrid.innerHTML = "<p class='list-empty'>Carregando cursos...</p>";
+
+      try {
+        const url = USER_ID
+          ? `${API_BASE}/get_user_courses.php?user_id=${encodeURIComponent(USER_ID)}`
+          : `${API_BASE}/get_user_courses.php`;
+
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (!data.success) {
+          coursesGrid.innerHTML = "<p class='list-empty'>Não foi possível carregar os cursos.</p>";
+          return;
+        }
+
+        let cursos = data.courses || [];
+        allCourses = cursos;
+
+        if (filter) {
+          const f = filter.toLowerCase();
+          cursos = cursos.filter(c =>
+            (c.title || "").toLowerCase().includes(f) ||
+            (c.category || "").toLowerCase().includes(f)
+          );
+        }
+
+        atualizarContadores(allCourses);
+
+        if (cursos.length === 0) {
+          coursesGrid.innerHTML = "<p class='list-empty'>Nenhum curso disponível no momento.</p>";
+          return;
+        }
+
+        coursesGrid.innerHTML = "";
+
+        cursos.forEach(curso => {
+          const card = document.createElement("article");
+          card.className = "course-card";
+
+          const thumb = curso.thumbnail_url
+            ? `<div class="course-thumb" style="background-image:url('${curso.thumbnail_url}')"></div>`
+            : `<div class="course-thumb fallback"></div>`;
+
+          const statusLabel = formatStatus(curso.status);
+          const progress = Number(curso.progress_percent || 0);
+
+          card.innerHTML = `
+            ${thumb}
+            <div class="course-body">
+              <h3>${curso.title}</h3>
+              <p class="course-category">${curso.category || "Sem categoria"}</p>
+              <p class="course-description">${curso.description || ""}</p>
+
+              <div class="course-status-row">
+                <span class="badge-status status-${curso.status || "nao_iniciado"}">
+                  ${statusLabel}
+                </span>
+                <span class="progress-label">${progress}% concluído</span>
+              </div>
+
+              <div class="course-progress">
+                <div class="course-progress-bar" style="width: ${progress}%;"></div>
+              </div>
+
+              <div class="course-actions">
+                <button class="btn-secondary" onclick="openCourse('${curso.video_url || ""}', ${curso.id})">
+                  Acessar curso
+                </button>
+                <button class="btn-outline" onclick="markCompleted(${curso.id})">
+                  Marcar como concluído
+                </button>
+              </div>
+            </div>
+          `;
+
+          coursesGrid.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        coursesGrid.innerHTML = "<p class='list-empty'>Erro ao conectar com o servidor.</p>";
+      }
+    }
+
+    userSearch.addEventListener("input", (e) => {
+      const filtro = e.target.value.trim();
+
+      if (!allCourses.length) {
+        loadCourses(filtro);
+        return;
+      }
+
+      const f = filtro.toLowerCase();
+      const cursosFiltrados = allCourses.filter(c =>
+        (c.title   || "").toLowerCase().includes(f) ||
+        (c.category || "").toLowerCase().includes(f)
+      );
+
+      atualizarContadores(cursosFiltrados);
+
+      if (cursosFiltrados.length === 0) {
+        coursesGrid.innerHTML = "<p class='list-empty'>Nenhum curso encontrado para esse filtro.</p>";
+        return;
+      }
+
+      coursesGrid.innerHTML = "";
+      cursosFiltrados.forEach(curso => {
+        const card = document.createElement("article");
+        card.className = "course-card";
+
+        const thumb = curso.thumbnail_url
+          ? `<div class="course-thumb" style="background-image:url('${curso.thumbnail_url}')"></div>`
+          : `<div class="course-thumb fallback"></div>`;
+
+        const statusLabel = formatStatus(curso.status);
+        const progress = Number(curso.progress_percent || 0);
+
+        card.innerHTML = `
+          ${thumb}
+          <div class="course-body">
+            <h3>${curso.title}</h3>
+            <p class="course-category">${curso.category || "Sem categoria"}</p>
+            <p class="course-description">${curso.description || ""}</p>
+
+            <div class="course-status-row">
+              <span class="badge-status status-${curso.status || "nao_iniciado"}">
+                ${statusLabel}
+              </span>
+              <span class="progress-label">${progress}% concluído</span>
+            </div>
+
+            <div class="course-progress">
+              <div class="course-progress-bar" style="width: ${progress}%;"></div>
+            </div>
+
+            <div class="course-actions">
+              <button class="btn-secondary" onclick="openCourse('${curso.video_url || ""}', ${curso.id})">
+                Acessar curso
+              </button>
+              <button class="btn-outline" onclick="markCompleted(${curso.id})">
+                Marcar como concluído
+              </button>
+            </div>
+          </div>
+        `;
+
+        coursesGrid.appendChild(card);
+      });
+    });
+
+    // Carrega cursos ao abrir página
+    loadCourses();
+  </script>
+</body>
+</html>

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin - Amemiya Academy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="app-body">
+  <style>
+    /* botão "Excluir" em vermelho */
+    .btn-danger {
+      background-color: #dc2626 !important;  /* vermelho forte */
+      color: #ffffff !important;
+      border: none !important;
+      padding: 6px 14px !important;
+      border-radius: 8px !important;
+      cursor: pointer !important;
+      font-size: 0.85rem !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 4px !important;
+      transition: all 0.2s ease-in-out !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
+    }
+
+    .btn-danger:hover {
+      background-color: #b91c1c !important;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25) !important;
+    }
+
+    .btn-danger:active {
+      background-color: #7f1d1d !important;
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+    }
+
+    .btn-xs {
+      padding: 4px 10px !important;
+      font-size: 0.75rem !important;
+      border-radius: 6px !important;
+    }
+  </style>
+  <header class="topbar">
+    <div class="topbar-left">
+      <!-- LOGO: coloque o arquivo em /amemiya_academy/img/logo_amemiya.png -->
+      <div class="logo-img-wrapper">
+        <img src="designer.png" alt="Amemiya" width="40" height="40" />
+      </div>
+      <span class="logo-title">Amemiya Academy</span>
+      <span class="badge badge-admin">Admin</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-outline" onclick="window.location.href='login.html'">
+        Sair
+      </button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="section">
+      <h1 class="page-title">Painel Administrativo</h1>
+      <p class="page-subtitle">
+        Cadastre, edite e remova cursos disponíveis para os colaboradores.
+      </p>
+
+      <div class="grid-2">
+        <!-- Formulário de curso -->
+        <div class="card">
+          <h2 class="section-title">Adicionar / Editar Curso</h2>
+          <form id="courseForm" class="form-vertical">
+            <!-- hidden para saber se estamos editando -->
+            <input type="hidden" id="courseId" />
+
+            <div class="form-group">
+              <label for="courseTitle">Título</label>
+              <input type="text" id="courseTitle" required />
+            </div>
+
+            <div class="form-group">
+              <label for="courseDescription">Descrição</label>
+              <textarea id="courseDescription" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="courseCategory">Categoria</label>
+              <input type="text" id="courseCategory" placeholder="Ex: Comportamental, Técnico..." />
+            </div>
+
+            <div class="form-group">
+              <label for="courseThumbnail">URL da imagem (capa)</label>
+              <input type="url" id="courseThumbnail" placeholder="https://..." />
+            </div>
+
+            <div class="form-group">
+              <label for="courseLink">Link de acesso ao curso</label>
+              <input
+                type="url"
+                id="courseLink"
+                placeholder="https://... (YouTube, plataforma externa, PDF, etc.)"
+              />
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn-primary" id="btnSaveCourse">
+                Salvar curso
+              </button>
+              <button type="button" class="btn-outline" id="btnCancelEdit" style="display:none;">
+                Cancelar edição
+              </button>
+            </div>
+
+            <p id="courseMessage" class="feedback"></p>
+          </form>
+        </div>
+
+        <!-- Lista de cursos -->
+        <div class="card">
+          <div class="section-header">
+            <h2 class="section-title">Cursos cadastrados</h2>
+            <input type="text" id="adminSearch" class="input-search" placeholder="Buscar curso..." />
+          </div>
+          <ul id="coursesList" class="list">
+            <!-- preenchido via JS -->
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost/amemiya_academy/api";
+
+    const courseForm     = document.getElementById("courseForm");
+    const courseMessage  = document.getElementById("courseMessage");
+    const coursesList    = document.getElementById("coursesList");
+    const adminSearch    = document.getElementById("adminSearch");
+
+    const inputId        = document.getElementById("courseId");
+    const inputTitle     = document.getElementById("courseTitle");
+    const inputDesc      = document.getElementById("courseDescription");
+    const inputCategory  = document.getElementById("courseCategory");
+    const inputThumb     = document.getElementById("courseThumbnail");
+    const inputLink      = document.getElementById("courseLink");
+    const btnSaveCourse  = document.getElementById("btnSaveCourse");
+    const btnCancelEdit  = document.getElementById("btnCancelEdit");
+
+    let allCourses = [];
+
+    async function loadCourses(filter = "") {
+      coursesList.innerHTML = "<li class='list-empty'>Carregando cursos...</li>";
+      try {
+        const resp = await fetch(`${API_BASE}/get_courses.php`);
+        const data = await resp.json();
+
+        if (!data.success) {
+          coursesList.innerHTML = "<li class='list-empty'>Não foi possível carregar os cursos.</li>";
+          return;
+        }
+
+        allCourses = data.courses || [];
+
+        let cursos = allCourses;
+        if (filter) {
+          const f = filter.toLowerCase();
+          cursos = cursos.filter(c =>
+            (c.title || "").toLowerCase().includes(f) ||
+            (c.category || "").toLowerCase().includes(f)
+          );
+        }
+
+        if (cursos.length === 0) {
+          coursesList.innerHTML = "<li class='list-empty'>Nenhum curso cadastrado.</li>";
+          return;
+        }
+
+        coursesList.innerHTML = "";
+        cursos.forEach(curso => {
+          const li = document.createElement("li");
+          li.className = "list-item";
+
+          li.innerHTML = `
+            <div class="list-item-info">
+              <h3>${curso.title}</h3>
+              <p class="list-meta">
+                ${curso.category || "Sem categoria"} •
+                ${curso.video_url ? "Tem link" : "Sem link"} •
+                ${curso.thumbnail_url ? "Tem capa" : "Sem capa"}
+              </p>
+            </div>
+            <div class="list-item-actions">
+              <button class="btn-outline btn-xs" onclick="editCourse('${curso.id}')">Editar</button>
+              <button class="btn-danger  btn-xs" onclick="deleteCourse('${curso.id}')">Excluir</button>
+            </div>
+          `;
+
+          coursesList.appendChild(li);
+        });
+      } catch (err) {
+        console.error(err);
+        coursesList.innerHTML = "<li class='list-empty'>Erro ao conectar com o servidor.</li>";
+      }
+    }
+
+    // Preenche o formulário para edição
+    window.editCourse = function (id) {
+      const curso = allCourses.find(c => c.id == id);
+      if (!curso) return;
+
+      inputId.value       = curso.id;
+      inputTitle.value    = curso.title || "";
+      inputDesc.value     = curso.description || "";
+      inputCategory.value = curso.category || "";
+      inputThumb.value    = curso.thumbnail_url || "";
+      inputLink.value     = curso.video_url || "";
+
+      btnSaveCourse.textContent = "Atualizar curso";
+      btnCancelEdit.style.display = "inline-flex";
+      courseMessage.textContent = "Editando curso: " + (curso.title || "");
+      courseMessage.className = "feedback info";
+    };
+
+    // Cancela edição e limpa formulário
+    btnCancelEdit.addEventListener("click", () => {
+      inputId.value = "";
+      courseForm.reset();
+      btnSaveCourse.textContent = "Salvar curso";
+      btnCancelEdit.style.display = "none";
+      courseMessage.textContent = "";
+      courseMessage.className = "feedback";
+    });
+
+    // Excluir curso
+    window.deleteCourse = async function (id) {
+      if (!confirm("Tem certeza que deseja excluir este curso?")) return;
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin_delete_course.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+          alert(data.message || "Erro ao excluir curso.");
+          return;
+        }
+
+        alert("Curso excluído com sucesso!");
+        loadCourses(adminSearch.value.trim());
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao conectar com o servidor.");
+      }
+    };
+
+    // Salvar / atualizar curso
+    courseForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      courseMessage.textContent = "";
+      courseMessage.className = "feedback";
+
+      const payload = {
+        id:          inputId.value || null,
+        title:       inputTitle.value.trim(),
+        description: inputDesc.value.trim(),
+        category:    inputCategory.value.trim(),
+        thumbnail_url: inputThumb.value.trim(),
+        video_url:     inputLink.value.trim(),
+      };
+
+      if (!payload.title) {
+        courseMessage.textContent = "Informe o título do curso.";
+        courseMessage.className = "feedback error";
+        return;
+      }
+
+      // decide se é insert ou update
+      const isEdit = !!payload.id;
+      const endpoint = isEdit ? "admin_update_course.php" : "admin_add_course.php";
+
+      try {
+        const resp = await fetch(`${API_BASE}/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+          courseMessage.textContent = data.message || "Erro ao salvar curso.";
+          courseMessage.className = "feedback error";
+          return;
+        }
+
+        courseMessage.textContent = isEdit
+          ? "Curso atualizado com sucesso!"
+          : "Curso cadastrado com sucesso!";
+        courseMessage.className = "feedback success";
+
+        // limpa form
+        inputId.value = "";
+        courseForm.reset();
+        btnSaveCourse.textContent = "Salvar curso";
+        btnCancelEdit.style.display = "none";
+
+        // recarrega lista
+        loadCourses(adminSearch.value.trim());
+      } catch (err) {
+        console.error(err);
+        courseMessage.textContent = "Erro de conexão com o servidor.";
+        courseMessage.className = "feedback error";
+      }
+    });
+
+    adminSearch.addEventListener("input", (e) => {
+      loadCourses(e.target.value);
+    });
+
+    loadCourses();
+  </script>
+</body>
+</html>
