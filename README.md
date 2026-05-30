@@ -139,7 +139,7 @@ As senhas são armazenadas com `password_hash()` do PHP (bcrypt).
 
 ## 👩‍💻 Autora
 
-Desenvolvido por **[Julyxdias](https://github.com/Julyxdias)** — Engenharia da Computação.
+Desenvolvido por **[Julyxdias](https://github.com/Julyxdias)** e **[Karolaine]([https://github.com/Julyxdias](https://github.com/Karolaine231))** — Engenharia da Computação.
 
 ---
 
